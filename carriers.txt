@@ -1,0 +1,13 @@
+
+Seznam názvù dopravcù v URL requestech:
+
+cp
+dpd
+geis
+gls
+intime
+pbh - Pošta bez hranic (Frogman s.r.o.)
+ppl
+toptrans
+ulozenka
+zasilkovna

@@ -1,0 +1,87 @@
+
+service_type Česká pošta
+DR – balík Do ruky, 
+NP – balík Na poštu, 
+RR – doporučená zásilka (při zaslání informace o váze zásilky do 0,05 kg RR standard), 
+DV – balík Do ruky pro vybrané podavatele, 
+VL – cenné psaní, 
+SR – RR standard (obdoba RR, jen není potřeba zasílat váhu do 0,05 kg – systém při nedoražení váhy udá váhu 0,04 kg), 
+BA – doporučený balíček, 
+BB – cenný balík
+
+service_type DPD
+1 – DPD Classic, 
+2 – DPD Private,
+3 – DPD Pickup,
+4 – DPD Express 10:00,
+5 - DPD Express 12:00,
+6 - DPD Express 18:00,
+7 - DPD Private večerní doručení, 
+8 - DPD Private sobotní doručení.
+
+service_type PPL
+2 – PPL Parcel Connect (exportní balík)
+3 – PPL Parcel CZ Dopolední balík
+4 – PPL Parcel CZ Private (soukromý balík)
+8 – PPL Parcel CZ Business (firemní balík)
+9 – PPL Parcel CZ Private - Večerní doručení
+
+service_type PPL Sprint – paletová přeprava
+15 – PPL Firemní paleta
+19 – PPL Soukromá paleta
+
+service_type Geis
+1 - Soukromá zásilka (B2C)
+2 – Firemní zásilka
+3 – Mezinárodní zásilka
+6 – Geis Point
+
+service_type Geis cargo
+4 – Cargo CZ vnitrostátní zásilka
+5 – Cargo mezinárodní zásilka
+
+service_type Ulozenka
+1 – Uloženka, 
+2 – Zmluvný balík s poistením – Slovenská pošta, 
+3 – DPD Classic, 
+4 – DPD Private, 
+5 – DPD ParcelShop, 
+6 – Balík do ruky – Česká pošta, 
+7 – Balík na poštu – Česká pošta, 
+10 – Partner PNS, 
+11 – Partner
+
+service_type Intime
+1 – Small Colli 24 - CZ, 
+2 – Medium Colli 24 - CZ, 
+3 – Large Colli 24 - CZ, 
+4 – Poštomat CZ, 
+5 – Poštomat SK, 
+6 – Large Colli 48 - SK, 
+7 – Extra Large Colli 24 - CZ
+
+service_type GLS
+1 – Business Parcel (doručení do ruky)
+2 – ShopDelivery Service (doručení na výdejní místo)
+
+service_type Toptrans
+1 – 24 hodin (Standard)
+2 – Toptime
+3 – Privat
+4 – Weekend
+5 – Osobní odběr
+6 – Po avizaci
+
+service_type Pošta bez hranic PbH
+DHL (1), 
+GLS (2), 
+UPS (3), 
+Slovenská pošta (4), 
+Transoflex (5), 
+Maďarská pošta (6), 
+Cargus (7), 
+Rakouská pošta (8), 
+Česká pošta Balík do ruky (9),
+Česká pošta Balík na poštu(10), 
+PPL (11) a 
+DPD (12)
