@@ -2,6 +2,9 @@
 
 /**
  * http://www.balikobot.cz/dokumentace/Balikobot-dokumentace-API.pdf // v1.79 2017-01-30
+ * 
+ * @author http://www.janpotuznik.cz/
+ * @link https://github.com/jan-potuznik/balikobot/
  */
 class balikobot {
 
@@ -21,6 +24,50 @@ class balikobot {
 		503 => 'technologie dopravce není dostupná, požadavek bude vyřízen později',
 	);
 	public static $key_status_codes = array(
+		406 => array(
+			'eid' => 'Nedorazilo eshop ID.',
+			'service_type' => 'Nedorazilo ID vybrané služby přepravce.',
+			'cod_currency' => 'Nedorazil ISO kód měny.',
+			'branch_id' => 'Nedorazilo ID pobočky.',
+			'rec_name' => 'Nedorazilo jméno příjemce.',
+			'rec_street' => 'Nedorazila ulice s číslem popisným příjemce.',
+			'rec_city' => 'Nedorazilo město příjemce.',
+			'rec_zip' => 'Nedorazilo PSČ příjemce.',
+			'rec_country' => 'Nedorazil ISO kód země příjemce.',
+			'rec_phone' => 'Nedorazilo telefonní číslo příjemce.',
+			'rec_email' => 'Nedorazil email příjemce.',
+			'price' => 'Nedorazila udaná cena zásilky.',
+			'vs' => 'Nedorazil variabilní symbol pro dobírkovou zásilku.',
+			'service_range' => 'Balíček nelze přidat, protože není vyplněna číselná řada v klientské zóně.',
+			'config_data' => 'Balíček nelze přidat, protože chybí potřebná data v klientské zóně.',
+			'weight' => 'Nedorazil údaj o váze zásilky.',
+		),
+		409 => array(
+			'cod_price' => 'Nepovolená kombinace služeb dobírky a výměnné zásilky.',
+			'swap' => 'Nepovolená kombinace služeb dobírky a výměnné zásilky.',
+		),
+		413 => array(
+			'eid' => 'Eshop ID je delší než je maximální povolená délka.',
+			'service_type' => 'Neznámé ID služby přepravce.',
+			'cod_price' => 'Nepovolená dobírka.',
+			'cod_currency' => 'Nepovolený ISO kód měny.',
+			'price' => 'Nepovolená částka udané ceny.',
+			'branch_id' => 'Neznámé ID pobočky.',
+			'rec_email' => 'Špatný formát emailu příjemce.',
+			'order_number' => 'Sdružená zásilka není povolena.',
+			'rec_country' => 'Nepovolený ISO kód země příjemce.',
+			'rec_zip' => 'Nepovolené PSČ příjemce.',
+			'weight' => 'Neplatný formát váhy/váha překračuje maximální povolenou hodnotu.',
+			'swap' => 'Výměnná zásilka není pro vybranou službu povolena.',
+			'rec_phone' => 'Špatný formát telefonního čísla.',
+			'credit_card' => 'Platba kartou není pro tuto službu/pobočku povolena.',
+			'service_range' => 'Balíček nelze přidat, protože číselná řada v klientské zóně je již přečerpaná.',
+		),
+		416 => array(
+			'delivery_date' => 'Datum má špatný formát nebo není povoleno.'
+		),
+	);
+	public static $key_status_codes_simple = array(
 		406 => 'Nedorazila žádná data ke zpracování.',
 		409 => 'Nepovolená kombinace služeb dobírky a výměnné zásilky.',
 		413 => 'Špatný formát dat.',
