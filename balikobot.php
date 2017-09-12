@@ -14,6 +14,7 @@ class balikobot {
 		200 => 'OK, operace proběhla v pořádku',
 		208 => 'položka s doloženým ID již existuje. Data, která jsou navrácena, patří k původnímu záznamu',
 		400 => 'operace neproběhla v pořádku, zkontrolujte konkrétní data',
+		401 => 'Unauthorized - nejspíš chyba na straně Balikobotu',
 		403 => 'přepravce není pro použité klíče aktivovaný',
 		404 => 'zásilka neexistuje, nebo již byla zpracována',
 		406 => 'nedorazila žádná data ke zpracování nebo nemůžou být akceptována',
@@ -91,8 +92,13 @@ class balikobot {
 		}
 		curl_setopt($ch, CURLOPT_HTTPHEADER, array("Authorization: Basic " . base64_encode(self::$USER . ':' . self::$API_KEY), "Content-Type: application/json"));
 		$response = curl_exec($ch);
-		curl_close($ch);
+		$http_status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$aResponse = json_decode($response);
+		if ($aResponse === NULL) {
+			$aResponse = new stdClass();
+			$aResponse->status = $http_status;
+		}
+		curl_close($ch);
 		return $aResponse;
 	}
 
@@ -104,7 +110,7 @@ class balikobot {
 	 * Update údajů jednotlivých balíků není možný.
 	 * Pokud potřebujete změnit údaje na některé zásilce, je potřeba ji nejprve odmazat pomocí metody DROP a poté znovu vložit přes metodu ADD.
 	 *
-	 * @param type $package_id ID balíku, které předalo API při vložení balíku do systému
+	 * @param int $package_id ID balíku, které předalo API při vložení balíku do systému
 	 */
 	public static function drop($dopravce, $package_id) {
 		// mozno odeslat vice takovych poli, jako u add, nepodporuje Intime a Ulozenka
@@ -122,7 +128,7 @@ class balikobot {
 	/**
 	 * Vrací všechny stavy balíku/balíků.
 	 *
-	 * @param type $carrier_id ID v rámci přepravce předané metodou ADD
+	 * @param string $carrier_id ID v rámci přepravce předané metodou ADD
 	 */
 	public static function track($dopravce, $carrier_id) {
 		// mozno odeslat vice takovych poli, jako u add
@@ -140,7 +146,7 @@ class balikobot {
 	/**
 	 * Vrací poslední stav balíku/balíků ve formě čísla a textové prezentace.
 	 *
-	 * @param type $carrier_id ID v rámci přepravce předané metodou ADD
+	 * @param string $carrier_id ID v rámci přepravce předané metodou ADD
 	 */
 	public static function trackstatus($dopravce, $carrier_id) {
 		// mozno odeslat vice takovych poli, jako u add
@@ -176,7 +182,7 @@ class balikobot {
 	/**
 	 * Kompletní informace ke konkrétnímu balíku.
 	 *
-	 * @param type $package_id ID balíku, které předalo API při vložení balíku do systému
+	 * @param int $package_id ID balíku, které předalo API při vložení balíku do systému
 	 */
 	public static function package($dopravce, $package_id) {
 		return self::curl_request($dopravce, 'package/' . $package_id);
