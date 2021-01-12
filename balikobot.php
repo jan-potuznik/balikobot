@@ -10,6 +10,7 @@ class balikobot {
 
 	private static $USER = '';
 	private static $API_KEY = '';
+	private static $API_URL = 'https://api.balikobot.cz';
 	public static $response_status_codes = array(
 		200 => 'OK, operace proběhla v pořádku',
 		208 => 'položka s doloženým ID již existuje. Data, která jsou navrácena, patří k původnímu záznamu',
@@ -75,14 +76,17 @@ class balikobot {
 		416 => 'Datum má špatný formát nebo není povoleno.',
 	);
 
-	public static function init($user, $api_key) {
+	public static function init($user, $api_key, $api_url = NULL) {
 		self::$USER = $user;
 		self::$API_KEY = $api_key;
+		if ($api_url) {
+			self::$API_URL = $api_url;
+		}
 	}
 
 	private static function curl_request($dopravce, $pozadavek, $aData = NULL) {
 		$ch = curl_init();
-		curl_setopt($ch, CURLOPT_URL, 'https://api.balikobot.cz/' . $dopravce . '/' . $pozadavek);
+		curl_setopt($ch, CURLOPT_URL, self::$API_URL . '/' . $dopravce . '/' . $pozadavek);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 		curl_setopt($ch, CURLOPT_HEADER, false);
 		curl_setopt($ch, CURLOPT_POST, true);
