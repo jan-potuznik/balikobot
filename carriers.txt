@@ -1,12 +1,12 @@
 
-Seznam názvù dopravcù v URL requestech:
+Seznam nÃ¡zvÅ¯ dopravcÅ¯ v URL requestech:
 
 cp
 dpd
 geis
 gls
 intime
-pbh - Pošta bez hranic (Frogman s.r.o.)
+pbh - PoÅ¡ta bez hranic (Frogman s.r.o.)
 ppl
 toptrans
 ulozenka
