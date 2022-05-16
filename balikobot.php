@@ -84,6 +84,8 @@ class balikobot {
     private $apiKey;
     /** @var string */
     private $apiUrl = 'https://api.balikobot.cz';
+    /** @var callable */
+    private $loggerCallback;
 
     /**
      * @param string $user
@@ -118,6 +120,9 @@ class balikobot {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
         }
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic " . base64_encode($this->user . ':' . $this->apiKey), "Content-Type: application/json"]);
+        if ($this->loggerCallback) {
+            call_user_func($this->loggerCallback, 'request', $carrier . '/' . $pozadavek, json_encode($postData));
+        }
         $curlResponse = curl_exec($ch);
         $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $response = json_decode($curlResponse, false);
@@ -126,7 +131,18 @@ class balikobot {
             $response->status = $httpStatus;
         }
         curl_close($ch);
+        if ($this->loggerCallback) {
+            call_user_func($this->loggerCallback, 'response', $carrier . '/' . $pozadavek, $curlResponse);
+        }
         return $response;
+    }
+
+    /**
+     * @param callback $callback accepting three strings, 'request'/'response', action and JSON encoded data
+     * @return void
+     */
+    public function registerLogger($callback) {
+        $this->loggerCallback = $callback;
     }
 
     /**
