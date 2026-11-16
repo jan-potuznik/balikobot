@@ -1,5 +1,33 @@
 {
     "require": {
         "php": ">=8.2 <8.6"
+    },
+    "require-dev": {
+        "ergebnis/composer-normalize": "^2.57",
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "classmap": [
+            "src/"
+        ]
+    },
+    "autoload-dev": {
+        "classmap": [
+            "tests/"
+        ]
+    },
+    "config": {
+        "allow-plugins": {
+            "ergebnis/composer-normalize": true
+        }
+    },
+    "scripts": {
+        "composer:normalize": "composer normalize",
+        "composer:normalize:check": "composer normalize --dry-run",
+        "phpunit": "phpunit",
+        "phpunit:coverage": [
+            "@putenv XDEBUG_MODE=coverage",
+            "phpunit --coverage-text --coverage-html coverage"
+        ]
     }
 }

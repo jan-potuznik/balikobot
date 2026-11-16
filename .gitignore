@@ -2,3 +2,5 @@
 /.claude/
 /CLAUDE.md
 /vendor/
+/.phpunit.cache/
+/coverage/

@@ -103,6 +103,7 @@ class Balikobot {
     private string $user;
     private string $apiKey;
     private string $apiUrl = 'https://api.balikobot.cz';
+    private BalikobotHttpClient $httpClient;
 
     /** @var callable|null */
     private $loggerCallback = null;
@@ -110,18 +111,22 @@ class Balikobot {
     /** @var string text poslední síťové chyby, prázdný řetězec když požadavek proběhl */
     private string $lastCurlError = '';
 
-    /** @var int sekundy na navázání spojení */
-    private const CONNECT_TIMEOUT = 10;
-
-    /** @var int sekundy na celý požadavek, add s více štítky může trvat */
-    private const TIMEOUT = 60;
-
-    public function __construct(string $user, string $apiKey, ?string $apiUrl = null) {
+    /**
+     * @param BalikobotHttpClient|null $httpClient vlastní přenosová vrstva (třeba Guzzle),
+     *     bez ní se použije curl
+     */
+    public function __construct(
+        string $user,
+        string $apiKey,
+        ?string $apiUrl = null,
+        ?BalikobotHttpClient $httpClient = null
+    ) {
         $this->user = $user;
         $this->apiKey = $apiKey;
         if ($apiUrl !== null) {
             $this->apiUrl = $apiUrl;
         }
+        $this->httpClient = $httpClient ?? new BalikobotCurlClient();
     }
 
     /**
@@ -160,37 +165,46 @@ class Balikobot {
     }
 
     /**
-     * Můžete případně použít třeba Guzzle.
-     *
      * @param mixed[]|null $postData
      */
     private function curlRequest(string $carrier, string $pozadavek, ?array $postData = null): mixed {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $this->apiUrl . '/' . $carrier . '/' . $pozadavek);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HEADER, false);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT);
-        curl_setopt($ch, CURLOPT_TIMEOUT, self::TIMEOUT);
-        if ($postData !== null && $postData !== []) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData, JSON_THROW_ON_ERROR));
-        }
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic " . base64_encode($this->user . ':' . $this->apiKey), "Content-Type: application/json"]);
+        $action = $carrier . '/' . $pozadavek;
+        $encodedData = json_encode($postData, JSON_THROW_ON_ERROR);
+        $headers = [
+            'Authorization: Basic ' . base64_encode($this->user . ':' . $this->apiKey),
+            'Content-Type: application/json',
+        ];
         if ($this->loggerCallback !== null) {
-            call_user_func($this->loggerCallback, 'request', $carrier . '/' . $pozadavek, json_encode($postData, JSON_THROW_ON_ERROR));
+            call_user_func($this->loggerCallback, 'request', $action, $encodedData);
         }
-        $curlResponse = curl_exec($ch);
-        $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $this->lastCurlError = ($curlResponse === false ? curl_error($ch) : '');
-        $response = json_decode((string)$curlResponse, false, 512, JSON_THROW_ON_ERROR);
+        $result = $this->httpClient->post(
+            $this->apiUrl . '/' . $action,
+            ($postData !== null && $postData !== [] ? $encodedData : null),
+            $headers
+        );
+        $this->lastCurlError = $result['error'];
+        $response = self::decodeResponse($result['body'], $result['httpStatus']);
+        if ($this->loggerCallback !== null) {
+            $loggedResponse = ($this->lastCurlError !== '' ? 'CURL ERROR: ' . $this->lastCurlError : $result['body']);
+            call_user_func($this->loggerCallback, 'response', $action, $loggedResponse);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Odpověď API, nebo náhradní objekt se statusem, když tělo nelze přečíst
+     * (síťová chyba, prázdná odpověď nebo chybová stránka místo JSON).
+     */
+    private static function decodeResponse(string $body, int $httpStatus): mixed {
+        try {
+            $response = json_decode($body, false, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $response = null;
+        }
         if ($response === null) {
             $response = new stdClass();
             $response->status = $httpStatus;
-        }
-        if ($this->loggerCallback !== null) {
-            $loggedResponse = ($this->lastCurlError !== '' ? 'CURL ERROR: ' . $this->lastCurlError : (string)$curlResponse);
-            call_user_func($this->loggerCallback, 'response', $carrier . '/' . $pozadavek, $loggedResponse);
         }
 
         return $response;
