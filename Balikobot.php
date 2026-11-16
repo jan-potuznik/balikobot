@@ -6,26 +6,31 @@
  * @author http://www.janpotuznik.cz/
  * @link https://github.com/jan-potuznik/balikobot/
  */
-class balikobot {
+class Balikobot {
 
     /** @var string[] */
-    public static $response_status_codes = [
+    public static array $response_status_codes = [
         200 => 'OK, operace proběhla v pořádku',
         208 => 'položka s doloženým ID již existuje. Data, která jsou navrácena, patří k původnímu záznamu',
         400 => 'operace neproběhla v pořádku, zkontrolujte konkrétní data',
         401 => 'Unauthorized - nejspíš chyba na straně Balikobotu',
+        402 => 'data k vícekusové zásilce nejsou odeslána kompletní',
         403 => 'přepravce není pro použité klíče aktivovaný',
         404 => 'zásilka neexistuje, nebo již byla zpracována',
+        405 => 'balík již byl odeslán ke svozu, nelze s ním dále pracovat',
         406 => 'nedorazila žádná data ke zpracování nebo nemůžou být akceptována',
         409 => 'konfigurační soubor daného dopravce nebo profil není vyplněn/konflikt mezi přijatými daty u zásilky (například u DPD pokud je u zásilky, která má být zaslána službou DPD Classic, zaslána dobírka cod_price a zároveň příznak, že se jedná o výměnnou zásilku swap)',
         413 => 'špatný formát dat',
+        416 => 'datum má špatný formát nebo není povoleno',
         423 => 'tato funkce je dostupná jen pro „živé klíče“',
+        500 => 'chyba na straně dopravce - výpadek, vypršení časového limitu nebo neplatná odpověď',
         501 => 'technologie toho dopravce ještě není implementována, pro bližší informace sledujte web www.balikobot.cz',
+        502 => 'chybná odpověď ze systému dopravce',
         503 => 'technologie dopravce není dostupná, požadavek bude vyřízen později',
     ];
 
     /** @var string[][] */
-    public static $key_status_codes = [
+    public static array $key_status_codes = [
         406 => [
             'eid' => 'Nedorazilo eshop ID.',
             'service_type' => 'Nedorazilo ID vybrané služby přepravce.',
@@ -66,33 +71,52 @@ class balikobot {
             'service_range' => 'Balíček nelze přidat, protože číselná řada v klientské zóně je již přečerpaná.',
         ],
         416 => [
-            'delivery_date' => 'Datum má špatný formát nebo není povoleno.'
+            'delivery_date' => 'Datum má špatný formát nebo není povoleno.',
         ],
     ];
 
     /** @var string[] */
-    public static $key_status_codes_simple = [
+    public static array $key_status_codes_simple = [
         406 => 'Nedorazila žádná data ke zpracování.',
         409 => 'Nepovolená kombinace služeb dobírky a výměnné zásilky.',
         413 => 'Špatný formát dat.',
         416 => 'Datum má špatný formát nebo není povoleno.',
     ];
 
-    /** @var string */
-    private $user;
-    /** @var string */
-    private $apiKey;
-    /** @var string */
-    private $apiUrl = 'https://api.balikobot.cz';
-    /** @var callable */
-    private $loggerCallback;
-
     /**
-     * @param string $user
-     * @param string $apiKey
-     * @param string|null $apiUrl
+     * Atributy, kterými API označuje chybu na straně dopravce (výpadek, vypršení časového limitu,
+     * neplatná odpověď nebo chyba serveru dopravce) - hodnotou je text chyby od dopravce, ne chybový kód.
+     *
+     * Od 7. 12. 2026 Balíkobot tyto chyby sjednocuje na jedinou hodnotu `carrier_error`,
+     * ostatní položky jsou ponechány kvůli starším odpovědím a přechodnému období.
+     *
+     * @var string[]
      */
-    public function __construct($user, $apiKey, $apiUrl = null) {
+    public static array $carrier_error_attributes = [
+        'carrier_error',
+        'other',
+        'GLS_API',
+        'DPD_API',
+        'zasilkovna_error',
+        'tnt_error',
+    ];
+    private string $user;
+    private string $apiKey;
+    private string $apiUrl = 'https://api.balikobot.cz';
+
+    /** @var callable|null */
+    private $loggerCallback = null;
+
+    /** @var string text poslední síťové chyby, prázdný řetězec když požadavek proběhl */
+    private string $lastCurlError = '';
+
+    /** @var int sekundy na navázání spojení */
+    private const CONNECT_TIMEOUT = 10;
+
+    /** @var int sekundy na celý požadavek, add s více štítky může trvat */
+    private const TIMEOUT = 60;
+
+    public function __construct(string $user, string $apiKey, ?string $apiUrl = null) {
         $this->user = $user;
         $this->apiKey = $apiKey;
         if ($apiUrl !== null) {
@@ -101,56 +125,96 @@ class balikobot {
     }
 
     /**
+     * Jde o chybu na straně dopravce, ne o chybu v datech požadavku?
+     * Kromě vyjmenovaných atributů se akceptují i neznámí dopravci podle přípony (`*_API`, `*_error`).
+     *
+     * @param string|int $key název atributu z chybové odpovědi
+     */
+    public static function isCarrierErrorAttribute(string|int $key): bool {
+        return in_array((string)$key, self::$carrier_error_attributes, true)
+            || preg_match('/(_API|_error)$/', (string)$key) === 1;
+    }
+
+    /**
+     * Popis stavu odpovědi, který nepadá na neznámé hodnotě.
+     * Status přichází z JSON odpovědi API, takže může být číslo i řetězec.
+     */
+    public static function describeStatus(mixed $status): string {
+        $status = (int)$status;
+        if ($status === 0) {
+            return 'spojení s API se nepodařilo navázat (vypršení časového limitu nebo síťová chyba)';
+        }
+
+        return self::$response_status_codes[$status] ?? 'neznámý stav API (' . $status . ')';
+    }
+
+    /**
+     * Nepovinná část cesty požadavku - prázdný řetězec, když hodnota nebyla předána.
+     */
+    private static function pathSegment(int|string|null $value): string {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        return '/' . $value;
+    }
+
+    /**
      * Můžete případně použít třeba Guzzle.
      *
-     * @param string $carrier
-     * @param string $pozadavek
-     * @param array|null $postData
-     * @return mixed|stdClass
+     * @param mixed[]|null $postData
      */
-    private function curlRequest($carrier, $pozadavek, $postData = null) {
+    private function curlRequest(string $carrier, string $pozadavek, ?array $postData = null): mixed {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $this->apiUrl . '/' . $carrier . '/' . $pozadavek);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HEADER, false);
         curl_setopt($ch, CURLOPT_POST, true);
-        // uncomment only if really needed
-        //curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        if ($postData) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT);
+        curl_setopt($ch, CURLOPT_TIMEOUT, self::TIMEOUT);
+        if ($postData !== null && $postData !== []) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData, JSON_THROW_ON_ERROR));
         }
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic " . base64_encode($this->user . ':' . $this->apiKey), "Content-Type: application/json"]);
-        if ($this->loggerCallback) {
-            call_user_func($this->loggerCallback, 'request', $carrier . '/' . $pozadavek, json_encode($postData));
+        if ($this->loggerCallback !== null) {
+            call_user_func($this->loggerCallback, 'request', $carrier . '/' . $pozadavek, json_encode($postData, JSON_THROW_ON_ERROR));
         }
         $curlResponse = curl_exec($ch);
         $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $response = json_decode($curlResponse, false);
+        $this->lastCurlError = ($curlResponse === false ? curl_error($ch) : '');
+        $response = json_decode((string)$curlResponse, false, 512, JSON_THROW_ON_ERROR);
         if ($response === null) {
             $response = new stdClass();
             $response->status = $httpStatus;
         }
-        curl_close($ch);
-        if ($this->loggerCallback) {
-            call_user_func($this->loggerCallback, 'response', $carrier . '/' . $pozadavek, $curlResponse);
+        if ($this->loggerCallback !== null) {
+            $loggedResponse = ($this->lastCurlError !== '' ? 'CURL ERROR: ' . $this->lastCurlError : (string)$curlResponse);
+            call_user_func($this->loggerCallback, 'response', $carrier . '/' . $pozadavek, $loggedResponse);
         }
+
         return $response;
     }
 
     /**
-     * @param callback $callback accepting three strings, 'request'/'response', action and JSON encoded data
-     * @return void
+     * Text poslední síťové chyby (nenavázané spojení, vypršení časového limitu),
+     * prázdný řetězec když poslední požadavek proběhl.
      */
-    public function registerLogger($callback) {
+    public function getLastCurlError(): string {
+        return $this->lastCurlError;
+    }
+
+    /**
+     * @param callable $callback accepting three strings, 'request'/'response', action and JSON encoded data
+     */
+    public function registerLogger(callable $callback): void {
         $this->loggerCallback = $callback;
     }
 
     /**
-     * @param string $carrier
-     * @param array $postData
-     * @return mixed|stdClass
+     * @param mixed[] $postData
      */
-    public function add($carrier, $postData) {
+    public function add(string $carrier, array $postData): mixed {
         return $this->curlRequest($carrier, 'add', $postData);
     }
 
@@ -158,11 +222,9 @@ class balikobot {
      * Update údajů jednotlivých balíků není možný.
      * Pokud potřebujete změnit údaje na některé zásilce, je potřeba ji nejprve odmazat pomocí metody DROP a poté znovu vložit přes metodu ADD.
      *
-     * @param string $carrier
      * @param int|int[] $packageIdOrIds ID balíku, které předalo API při vložení balíku do systému
-     * @return mixed|stdClass
      */
-    public function drop($carrier, $packageIdOrIds) {
+    public function drop(string $carrier, int|array $packageIdOrIds): mixed {
         $postData = [];
         // mozno odeslat vice takovych poli, jako u add, nepodporuje Intime a Ulozenka
         if (is_array($packageIdOrIds)) {
@@ -179,11 +241,9 @@ class balikobot {
     /**
      * Vrací všechny stavy balíku/balíků.
      *
-     * @param string $carrier
      * @param string|string[] $carrierIdOrIds ID v rámci přepravce předané metodou ADD
-     * @return mixed|stdClass
      */
-    public function track($carrier, $carrierIdOrIds) {
+    public function track(string $carrier, string|array $carrierIdOrIds): mixed {
         $postData = [];
         // mozno odeslat vice takovych poli, jako u add
         if (is_array($carrierIdOrIds)) {
@@ -193,17 +253,27 @@ class balikobot {
         } else {
             $postData = ['id' => $carrierIdOrIds];
         }
+
         return $this->curlRequest($carrier, 'track', $postData);
+    }
+
+    /**
+     * Vrací všechny stavy balíku. Funguje s default $apiUrl.
+     *
+     * @param string $carrierId ID v rámci přepravce předané metodou ADD
+     */
+    public function trackV2(string $carrier, string $carrierId): mixed {
+        $postData = ['id' => $carrierId];
+
+        return $this->curlRequest('v2/' . $carrier, 'track', $postData);
     }
 
     /**
      * Vrací poslední stav balíku/balíků ve formě čísla a textové prezentace.
      *
-     * @param string $carrier
      * @param string|string[] $carrierIdOrIds ID v rámci přepravce předané metodou ADD
-     * @return mixed|stdClass
      */
-    public function trackstatus($carrier, $carrierIdOrIds) {
+    public function trackstatus(string $carrier, string|array $carrierIdOrIds): mixed {
         $postData = [];
         // mozno odeslat vice takovych poli, jako u add
         if (is_array($carrierIdOrIds)) {
@@ -213,15 +283,14 @@ class balikobot {
         } else {
             $postData = ['id' => $carrierIdOrIds];
         }
+
         return $this->curlRequest($carrier, 'trackstatus', $postData);
     }
 
     /**
      * Soupis dosud neodeslaných balíků se základními informacemi.
-     * @param string $carrier
-     * @return mixed|stdClass
      */
-    public function overview($carrier) {
+    public function overview(string $carrier): mixed {
         return $this->curlRequest($carrier, 'overview');
     }
 
@@ -229,72 +298,61 @@ class balikobot {
      * Metoda vracející hromadné PDF se štítky pro vyžádané balíčky (package_ids) u vybraného dopravce.
      * Doplňková metoda pro klienty, kteří netisknou štítky ihned po přidání metodou ADD, ale až dávkově a chtějí mít štítky v hromadném PDF.
      *
-     * @param string $carrier
-     * @param array $packageIds
-     * @return mixed|stdClass
+     * @param (int|string)[] $packageIds
      */
-    public function labels($carrier, $packageIds) {
+    public function labels(string $carrier, array $packageIds): mixed {
         $aData = ['package_ids' => $packageIds];
+
         return $this->curlRequest($carrier, 'labels', $aData);
     }
 
     /**
      * Kompletní informace ke konkrétnímu balíku.
      *
-     * @param string $carrier
      * @param int $packageId ID balíku, které předalo API při vložení balíku do systému
-     * @return mixed|stdClass
      */
-    public function package($carrier, $packageId) {
+    public function package(string $carrier, int $packageId): mixed {
         return $this->curlRequest($carrier, 'package/' . $packageId);
     }
 
     /**
      * Předání dat do systému přepravce („objednání svozu“) pro dosud neodeslané balíky.
      *
-     * @param string $carrier
-     * @param array $packageIds nepovinný (pro vlastní řešení), výčet ID balíků (package_id – vrácené při metodě ADD), které budou zahrnuty do objednávaného svozu. Pokud je tento parametr prázdný, budou do objednávaného svozu zahrnuty všechny dosud neodeslané balíky. Žádáme vývojáře e-shopových řešení, aby nám tuto informaci zasílali povinně.
-     * @param string $note nepovinný, poznámka pro dopravce (jen pro PPL)
-     * @param string $date nepovinný, datum přijetí dopravce ke svozu (jen pro PPL) – pokud není vyplněno, vyplní se datum aktuálního dne.
-     * @return mixed|stdClass
+     * @param (int|string)[] $packageIds nepovinný (pro vlastní řešení), výčet ID balíků (package_id – vrácené při metodě ADD), které budou zahrnuty do objednávaného svozu. Pokud je tento parametr prázdný, budou do objednávaného svozu zahrnuty všechny dosud neodeslané balíky. Žádáme vývojáře e-shopových řešení, aby nám tuto informaci zasílali povinně.
+     * @param string|null $note nepovinný, poznámka pro dopravce (jen pro PPL)
+     * @param string|null $date nepovinný, datum přijetí dopravce ke svozu (jen pro PPL) – pokud není vyplněno, vyplní se datum aktuálního dne.
      */
-    public function order($carrier, $packageIds, $note = null, $date = null) {
+    public function order(string $carrier, array $packageIds, ?string $note = null, ?string $date = null): mixed {
         $postData = [];
         $postData['package_ids'] = $packageIds;
-        if ($note) {
+        if ($note !== null && $note !== '') {
             $postData['note'] = $note;
         }
-        if ($date) {
+        if ($date !== null && $date !== '') {
             $postData['date'] = $date;
         }
+
         return $this->curlRequest($carrier, 'order', $postData);
     }
 
     /**
      * Informace k poslednímu/konkrétnímu svozu – file_url, handover_url, labels_url, order_id.
-     * @param string $carrier
-     * @param null $orderId
-     * @return mixed|stdClass
      */
-    public function orderview($carrier, $orderId = null) {
-        return $this->curlRequest($carrier, 'orderview' . ($orderId ? '/' . $orderId : ''));
+    public function orderview(string $carrier, int|string|null $orderId = null): mixed {
+        return $this->curlRequest($carrier, 'orderview' . self::pathSegment($orderId));
     }
 
     /**
      * Vrací seznam služeb, které se dají použít u daného dopravce.
-     * @param string $carrier
-     * @return mixed|stdClass
      */
-    public function services($carrier) {
+    public function services(string $carrier): mixed {
         return $this->curlRequest($carrier, 'services');
     }
 
     /**
      * Vrací seznam názvů a id (hodnot pro atribut mu_type) možných manipulačních jednotek pro paletovou přepravu (Geis Cargo).
-     * @param string $carrier
-     * @return mixed|stdClass
      */
-    public function manipulationunits($carrier) {
+    public function manipulationunits(string $carrier): mixed {
         return $this->curlRequest($carrier, 'manipulationunits');
     }
 
@@ -302,44 +360,32 @@ class balikobot {
      * Vrací seznam poboček, na které se dají posílat zásilky u konkrétní služby.
      * Čísla poboček se poté dají předat do atributu branch_id v metodě ADD.
      * U dopravce Zásilkovna se zde předávají i čísla dalších služeb (např. Česká pošta nebo Expresní doručení Ostrava), které se předávají také do atributu branch_id.
-     * @param string $carrier
-     * @param null $serviceType
-     * @return mixed|stdClass
      */
-    public function branches($carrier, $serviceType = null) {
-        return $this->curlRequest($carrier, 'branches' . ($serviceType ? '/' . $serviceType : ''));
+    public function branches(string $carrier, int|string|null $serviceType = null): mixed {
+        return $this->curlRequest($carrier, 'branches' . self::pathSegment($serviceType));
     }
 
     /**
      * Obdoba metody BRANCHES s tím, že se pro každou pobočku vrací více informací.
      * Momentálně dostupná jen pro přepravce Zásilkovna.
-     * @param string $carrier
-     * @param null $serviceType
-     * @return mixed|stdClass
      */
-    public function fullbranches($carrier, $serviceType = null) {
-        return $this->curlRequest($carrier, 'fullbranches' . ($serviceType ? '/' . $serviceType : ''));
+    public function fullbranches(string $carrier, int|string|null $serviceType = null): mixed {
+        return $this->curlRequest($carrier, 'fullbranches' . self::pathSegment($serviceType));
     }
 
     /**
      * Seznam států, do kterých lze zasílat skrze jednotlivé služby přepravce.
-     * @param string $carrier
-     * @return mixed|stdClass
      */
-    public function countries4service($carrier) {
+    public function countries4service(string $carrier): mixed {
         return $this->curlRequest($carrier, 'countries4service');
     }
 
     /**
      * Vrací výčet PSČ, na které se dají posílat zásilky u konkrétní služby.
      * Tato PSČ jsou platná pro atribut rec_zip v metodě ADD.
-     * @param string $carrier
-     * @param string|null $serviceType
-     * @param string|null $country
-     * @return mixed|stdClass
      */
-    public function zipcodes($carrier, $serviceType = null, $country = null) {
-        return $this->curlRequest($carrier, 'zipcodes' . ($serviceType ? '/' . $serviceType : '') . ($country ? '/' . $country : ''));
+    public function zipcodes(string $carrier, int|string|null $serviceType = null, ?string $country = null): mixed {
+        return $this->curlRequest($carrier, 'zipcodes' . self::pathSegment($serviceType) . self::pathSegment($country));
     }
 
 }
