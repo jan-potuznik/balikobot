@@ -15,7 +15,8 @@ final class BalikobotCurlClient implements BalikobotHttpClient {
     private const TIMEOUT = 60;
 
     /**
-     * @param string[] $headers
+     * @param non-empty-string $url
+     * @param list<string> $headers
      * @return array{body: string, httpStatus: int, error: string}
      */
     public function post(string $url, ?string $jsonBody, array $headers): array {

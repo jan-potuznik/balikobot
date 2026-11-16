@@ -12,8 +12,9 @@ interface BalikobotHttpClient {
     /**
      * Odešle POST požadavek. Síťovou chybu nevyhazuje, předá ji v položce `error`.
      *
+     * @param non-empty-string $url
      * @param string|null $jsonBody tělo požadavku, null když se nic neposílá
-     * @param string[] $headers hlavičky ve formátu `Název: hodnota`
+     * @param list<string> $headers hlavičky ve formátu `Název: hodnota`
      * @return array{body: string, httpStatus: int, error: string} `body` je prázdný řetězec
      *     když požadavek neproběhl, `httpStatus` 0 když se nepodařilo navázat spojení
      *     a `error` nese text síťové chyby, jinak prázdný řetězec
